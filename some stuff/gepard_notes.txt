@@ -1,0 +1,2 @@
+gepard:65CCF -> make copy of section or char array? (used for copying something form game section, maybe everything)
+

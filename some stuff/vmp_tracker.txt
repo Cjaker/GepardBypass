@@ -1,0 +1,104 @@
+; Notes
+; If cip is inside .text module, means the CIP is a virtualized function
+
+; TODO:
+; [DONE] If cip is inside another module, just skip and force trace out
+; [TESTING] Check if cip is inside .text module and make special log
+$textSectionAddr = 0x6F6D1000
+$textSectionSize = 0x83000
+$textSectionEndAddr = $textSectionAddr + $textSectionSize
+
+$vmpSectionAddr = 0x6F778000
+$vmpSectionSize = 0x816000
+$vmpSectionEndAddr = $vmpSectionAddr + $vmpSectionSize
+
+log {x:$vmpSectionAddr}
+log {x:$vmpSectionSize}
+log {x:$vmpSectionEndAddr}
+
+; start checking
+check:
+; log "Checking " {x:cip}
+; find cip, "E9 ?? ?? ?? ??", 5
+; log "Result: " {x:$result}
+cmp cip, $vmpSectionAddr
+jb check_out_of_section_cip
+cmp $vmpSectionEndAddr, cip
+jb check_out_of_section_cip
+
+cmp dis.isunusual(cip), 0
+jne found_unusual
+
+cmp dis.isret(cip), 0
+jne found_ret
+
+; find cip, "E8 ?? ?? ?? ??", 5
+cmp dis.isbranch(cip), 0
+jne found_jmp_or_call
+
+not_found:
+jmp keep_tracing
+
+found_ret:
+log "[VMP] Returning " {modname@cip} ":" {x:cip} "" " -> " {modname@[csp]} ":" {x:[csp]}
+jmp keep_tracing
+
+found_jmp_or_call:
+find cip, "E8 ?? ?? ?? ??", 5
+cmp $result, 0
+jne call_log
+
+log "[VMP] jump " {modname@cip} ":" {x:cip} "" " -> " {modname@dis.branchdest(cip)} ":" {x:dis.branchdest(cip)}
+jmp keep_tracing
+
+found_unusual:
+cmp dis.iscallsystem(addr), 0
+jne found_syscall
+log "[UNUSUAL INSTRUCTION] Found at " {modname@cip} ":" {x:cip}
+jmp keep_tracing
+
+found_syscall:
+log "[SYSCALL] Found at " {modname@cip} ":" {x:cip}
+jmp keep_tracing
+
+call_log:
+; lets use our magical powers to check if is a vm_entry
+$check_addr = cip - 5
+find $check_addr, "68 ?? ?? ?? ??", 5
+cmp $result, 0
+jne is_vmentry
+
+force_call_log:
+log "[VMP] call " {modname@cip} ":" {x:cip} "" " -> " {modname@dis.branchdest(cip)} ":" {x:dis.branchdest(cip)}
+jmp keep_tracing
+
+is_vmentry:
+$destination = dis.branchdest(cip)
+cmp $destination, $vmpSectionAddr
+jb force_call_log
+cmp $vmpSectionEndAddr, $destination
+jb force_call_log
+
+; log if is vm entry
+log "[VMPEntry] " {modname@cip} ":" {x:cip} "" " -> " {modname@dis.branchdest(cip)} ":" {x:dis.branchdest(cip)}
+jmp keep_tracing
+
+keep_tracing:
+ticnd dis.isret(cip) || dis.isbranch(cip), 1000
+jmp check
+
+keep_tracing_out:
+tocnd dis.isret(cip) || dis.isbranch(cip), 50000
+jmp check
+
+check_out_of_section_cip:
+cmp cip, $textSectionAddr
+jb log_out_of_section_cip
+cmp $textSectionEndAddr, cip
+jb log_out_of_section_cip
+log "[MODULE_CODE] Executing " {modname@cip} ":" {x:cip} " (maybe is a function?)"
+jmp keep_tracing_out
+
+log_out_of_section_cip:
+log "[CIP_OUT_OF_SECTION] " {modname@cip} ":" {x:cip}
+jmp keep_tracing_out

@@ -1,0 +1,48 @@
+; TODO: Put a breakpoint on gepard sub $79A30
+; Make mini-dump if isn't CRC out loop, useful for detecting other methods of scanning
+
+$randomGameModuleAddr = 0x401000
+$crcPatch = 0x1FB3B3E0
+
+; delete breakpoints first
+bphc
+
+check:
+; breakpoint and wait access trigger
+bph $randomGameModuleAddr, r, 1
+SetHardwareBreakpointSilent $randomGameModuleAddr
+
+; run and just wait...
+erun
+
+; log the cip addr
+log "Breakpoint hit! CIP: " {x:cip}
+
+; find the out of loop addr
+find cip, "78 E9 E8 00 00 00 00", 32
+cmp $result, 0
+je error
+$result = $result + 2
+
+bphc
+$foundAddr = $result
+bp $result
+SetBreakpointSilent $result
+erun
+
+; store old crc and patch eax crc
+$oldCrc = 0
+mov $oldCrc, eax
+mov eax, $crcPatch
+
+; clear breakpoint
+bc $foundAddr
+
+log "Patched CRC at cip: " {x:cip} ". Old: " {x:$oldCrc} " -> New patched: " {x:eax}
+
+; restart checking
+jmp check
+
+error:
+log "CRC out of loop not found. CIP: " {x:cip}
+ret

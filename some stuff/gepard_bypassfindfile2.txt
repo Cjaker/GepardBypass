@@ -1,0 +1,28 @@
+; script for bypassing gepard .asi loading
+
+; delete breakpoints first
+bc
+
+bp Kernelbase.FindNextFileW + 0x163
+
+check:
+
+; run and wait breakpoint hit
+erun
+
+; lets check
+$result = strstr(utf16([ESP + 8] + 0x2C), "#aaa")
+cmp $result, 0
+je not_custom_dll
+
+; lets patch it
+; After breakpoint, modify last error code 0x12 ERROR_NO_MORE_FILES
+mov $d, fs:[0x18]
+mov [$d + 0x34], 0x12
+
+; patch return int
+mov eax, 0
+jmp check
+
+not_custom_dll:
+jmp check

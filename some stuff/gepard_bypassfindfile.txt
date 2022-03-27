@@ -1,0 +1,32 @@
+$hitCount = 0;
+
+; disable breakpoints first
+bphd
+bd
+
+; Put breakpoint on right offset
+bp Kernelbase.FindNextFileW + 0x160
+; enable it
+bpe Kernelbase.FindNextFileW + 0x160
+
+wait_for_bp:
+; run and wait
+erun
+
+; check if isn't the first, otherwise skip
+$hitCount = $hitCount + 1
+cmp $hitCount, 1
+je wait_for_bp
+
+; After breakpoint, modify last error code 0x12 ERROR_NO_MORE_FILES
+mov $d, fs:[0x18]
+mov [$d + 0x34], 0x12
+
+; Patch return
+mov eax, 0
+
+; disable breakpoint
+bpd Kernelbase.FindNextFileW + 0x160
+
+; keep running, after this dll will be loaded
+run
